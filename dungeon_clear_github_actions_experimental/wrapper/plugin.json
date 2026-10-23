@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "id": "mod-dungeon-clear",
+  "version": "0.1.0",
+  "name": {
+    "en": "Dungeon Clear (experimental)"
+  },
+  "description": {
+    "en": "Experimental LonelyIce wrapper for jrad7's autonomous dungeon bot module. Not gameplay-tested."
+  },
+  "authors": [
+    "Jared Wright and mod-dungeon-clear contributors"
+  ],
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/jrad7/mod-dungeon-clear",
+  "source": {
+    "repo": "https://github.com/jrad7/mod-dungeon-clear.git",
+    "commit": "0000000000000000000000000000000000000000"
+  },
+  "core": {
+    "abi": "lonelyice-ac-2"
+  },
+  "platforms": [
+    "windows-x64"
+  ],
+  "server": {
+    "library": "mod_dungeon_clear"
+  },
+  "depends": {
+    "playerbots": ">=1.0.4"
+  },
+  "config": "conf/mod_dungeon_clear.conf.dist"
+}
