@@ -14,7 +14,7 @@ set(patch_command "")
 if (patches)
   set(patch_command PATCH_COMMAND "${GIT_EXECUTABLE}" reset --quiet --hard
      COMMAND "${GIT_EXECUTABLE}" clean --quiet -fd
-     COMMAND "${GIT_EXECUTABLE}" apply --whitespace=nowarn ${patches})
+     COMMAND "${GIT_EXECUTABLE}" apply --ignore-space-change --whitespace=nowarn ${patches})
 endif()
 FetchContent_Declare(dungeon_clear_upstream
   GIT_REPOSITORY "${repo}"
