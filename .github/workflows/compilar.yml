@@ -1,0 +1,133 @@
+name: Compilar Dungeon Clear (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      lonelyice_ref:
+        description: "Tag/commit exato do LonelyIce instalado (v0.1.1 inicialmente)"
+        required: true
+        default: "v0.1.1"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compilar DLL experimental
+    runs-on: windows-2022
+    timeout-minutes: 350
+    steps:
+      - name: Obter arquivos deste projeto
+        uses: actions/checkout@v4
+
+      - name: Instalar Boost 1.87 para MSVC
+        id: boost
+        uses: MarkusJx/install-boost@v2.6.0
+        with:
+          boost_version: 1.87.0
+          platform_version: '2022'
+          toolset: msvc
+
+      - name: Baixar LonelyIce e submodules da versao escolhida
+        shell: pwsh
+        run: |
+          git config --global core.longpaths true
+          git clone --recursive --branch "${{ inputs.lonelyice_ref }}" https://github.com/LonelyIceProject/lonelyice.git upstream
+          if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel clonar o LonelyIce.' }
+          git -C upstream submodule update --init --recursive
+          if ($LASTEXITCODE -ne 0) { throw 'Falha nos submodulos do LonelyIce.' }
+          $rev = (git -C upstream rev-parse HEAD).Trim()
+          "LonelyIce: $rev" | Set-Content -Encoding utf8 build-revisions.txt
+
+      - name: Confirmar plugin Playerbots e fixar fonte do Dungeon Clear
+        shell: pwsh
+        run: |
+          $bots = Get-ChildItem 'upstream/plugins' -Directory | Where-Object {
+            $f = Join-Path $_.FullName 'plugin.json'
+            if (-not (Test-Path $f)) { return $false }
+            try { ((Get-Content $f -Raw | ConvertFrom-Json).id -eq 'playerbots') } catch { $false }
+          } | Select-Object -First 1
+          if (-not $bots) {
+            Write-Host 'Playerbots nao veio entre os submodules; obtendo fonte oficial.'
+            git clone https://github.com/LonelyIceProject/mod-playerbots.git upstream/plugins/mod-playerbots-extra
+            if ($LASTEXITCODE -ne 0) { throw 'Falhou o download do Playerbots.' }
+            $bots = Get-Item 'upstream/plugins/mod-playerbots-extra'
+          }
+          "PLAYERBOTS_PATH=$($bots.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $botRev = (git -C $bots.FullName rev-parse HEAD).Trim()
+          "Playerbots: $botRev" | Out-File build-revisions.txt -Encoding utf8 -Append
+          $ls = git ls-remote https://github.com/jrad7/mod-dungeon-clear.git refs/heads/master
+          if ($LASTEXITCODE -ne 0 -or -not $ls) { throw 'Falhou ao obter commit do Dungeon Clear.' }
+          $sha = ($ls -split '\s+')[0].Trim()
+          if ($sha -notmatch '^[0-9a-f]{40}$') { throw "Commit invalido: $sha" }
+          $m = Get-Content wrapper/plugin.json -Raw | ConvertFrom-Json
+          $m.source.commit = $sha
+          $m | ConvertTo-Json -Depth 30 | Set-Content wrapper/plugin.json -Encoding utf8
+          "Dungeon Clear: $sha" | Out-File build-revisions.txt -Encoding utf8 -Append
+          Write-Host "Dungeon Clear em commit fixo $sha"
+
+      - name: Encontrar OpenSSL 3 do Windows
+        shell: pwsh
+        run: |
+          $opensslExe = (Get-Command openssl -ErrorAction Stop).Source
+          $root = Split-Path (Split-Path $opensslExe -Parent) -Parent
+          $candidates = @($root, 'C:\Program Files\OpenSSL-Win64', 'C:\Program Files\OpenSSL') | Select-Object -Unique
+          $valid = $candidates | Where-Object { Test-Path (Join-Path $_ 'include/openssl/ssl.h') } | Select-Object -First 1
+          if (-not $valid) { throw 'OpenSSL com headers nao encontrado; veja os logs.' }
+          "OPENSSL_ROOT_DIR=$valid" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "OpenSSL raiz: $valid"
+
+      - name: Preparar dependencias headless do LonelyIce
+        shell: pwsh
+        run: |
+          Push-Location upstream
+          try {
+            & ./tools/build-ui-deps.ps1 -Headless
+            if ($LASTEXITCODE -ne 0) { throw 'Falha preparando dependencias headless.' }
+          } finally { Pop-Location }
+
+      - name: Configurar CMake (somente Playerbots + Dungeon Clear)
+        shell: pwsh
+        env:
+          BOOST_ROOT: ${{ steps.boost.outputs.BOOST_ROOT }}
+        run: |
+          $wrapper = (Resolve-Path 'wrapper').Path -replace '\\','/'
+          $bots = $env:PLAYERBOTS_PATH -replace '\\','/'
+          $dirs = "$bots;$wrapper"
+          cmake -S upstream -B upstream/build -A x64 `
+            '-DLONELYICE_GUI=OFF' '-DLONELYICE_TUI=OFF' `
+            "-DBOOST_ROOT=$env:BOOST_ROOT" `
+            "-DOPENSSL_ROOT_DIR=$env:OPENSSL_ROOT_DIR" `
+            "-DLONELYICE_PLUGIN_DIRS=$dirs"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure falhou. Verifique dependencias/API.' }
+
+      - name: Compilar Dungeon Clear (MSVC)
+        shell: pwsh
+        run: |
+          cmake --build upstream/build --config RelWithDebInfo --target mod-dungeon-clear --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'A compilacao C++ falhou. Este wrapper ainda precisa de ajustes.' }
+
+      - name: Separar somente plugin gerado
+        shell: pwsh
+        run: |
+          $target = Get-ChildItem 'upstream/build' -Recurse -File -Filter plugin.json | Where-Object {
+            try { ((Get-Content $_.FullName -Raw | ConvertFrom-Json).id -eq 'mod-dungeon-clear') } catch { $false }
+          } | Where-Object { $_.FullName -match 'plugins' } | Select-Object -First 1
+          if (-not $target) { throw 'Plugin compilado nao foi localizado.' }
+          $folder = $target.Directory.FullName
+          if (-not (Get-ChildItem $folder -Recurse -Filter '*.dll' -File | Select-Object -First 1)) {
+            throw 'Nenhuma DLL no pacote; nao gerar artefato incompleto.'
+          }
+          New-Item -ItemType Directory -Path 'dist/mod-dungeon-clear' -Force | Out-Null
+          Copy-Item "$folder/*" 'dist/mod-dungeon-clear/' -Recurse -Force
+          Copy-Item 'build-revisions.txt' 'dist/build-revisions.txt'
+          'EXPERIMENTAL: not validated against installed LonelyIce. Use only on a copied server after full backup.' | Set-Content 'dist/LEIA-ANTES-DE-INSTALAR.txt'
+
+      - name: Disponibilizar ZIP nos artefatos da execucao
+        uses: actions/upload-artifact@v4
+        with:
+          name: dungeon-clear-windows-experimental
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
