@@ -121,11 +121,11 @@ jobs:
           }
           New-Item -ItemType Directory -Path 'dist/mod-dungeon-clear' -Force | Out-Null
           Copy-Item "$folder/*" 'dist/mod-dungeon-clear/' -Recurse -Force
-          $pbFolder = 'upstream/build/bin/RelWithDebInfo/plugins/playerbots'
-if (-not (Test-Path "$pbFolder/server/windows-x64/playerbots.dll")) {
-  throw 'DLL correspondente do Playerbots nao encontrada.'
-}
-Copy-Item $pbFolder 'dist/playerbots' -Recurse -Force
+                    $pbFolder = 'upstream/build/bin/RelWithDebInfo/plugins/playerbots'
+          if (-not (Test-Path "$pbFolder/server/windows-x64/playerbots.dll")) {
+            throw 'DLL correspondente do Playerbots nao encontrada.'
+          }
+          Copy-Item $pbFolder 'dist/playerbots' -Recurse -Force
           Copy-Item 'build-revisions.txt' 'dist/build-revisions.txt'
           'EXPERIMENTAL: not validated against installed LonelyIce. Use only on a copied server after full backup.' | Set-Content 'dist/LEIA-ANTES-DE-INSTALAR.txt'
 
