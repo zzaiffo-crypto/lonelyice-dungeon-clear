@@ -25,24 +25,6 @@ FetchContent_Declare(dungeon_clear_upstream
 FetchContent_MakeAvailable(dungeon_clear_upstream)
 set(module "${dungeon_clear_upstream_SOURCE_DIR}")
 # Compatibilidade dos registradores internos do Playerbots no Windows.
-file(GLOB_RECURSE _pb_headers
-  "${CMAKE_SOURCE_DIR}/plugins/mod-playerbots/src/*AiObjectContext.h")
-
-foreach(_file IN LISTS _pb_headers)
-  file(READ "${_file}" _txt)
-  if(_txt MATCHES "static SharedNamedObjectContextList<")
-    string(REPLACE "#include \"Common.h\""
-      "#include \"Common.h\"\n#include \"PlayerbotsExport.h\""
-      _txt "${_txt}")
-    string(REPLACE "#include \"AiObjectContext.h\""
-      "#include \"AiObjectContext.h\"\n#include \"PlayerbotsExport.h\""
-      _txt "${_txt}")
-    string(REPLACE "static SharedNamedObjectContextList<"
-      "static PLAYERBOTS_API SharedNamedObjectContextList<"
-      _txt "${_txt}")
-    file(WRITE "${_file}" "${_txt}")
-  endif()
-endforeach()
 
 # ID do modelo invisivel confirmado na versao do nucleo utilizada.
 set(_spec "${module}/src/Util/DcSpectator.cpp")
