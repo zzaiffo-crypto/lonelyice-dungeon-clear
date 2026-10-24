@@ -66,7 +66,42 @@ jobs:
           $m | ConvertTo-Json -Depth 30 | Set-Content wrapper/plugin.json -Encoding utf8
           "Dungeon Clear: $sha" | Out-File build-revisions.txt -Encoding utf8 -Append
           Write-Host "Dungeon Clear em commit fixo $sha"
-
+      - name: Preparar exportacoes do Playerbots para DLL
+        shell: pwsh
+        run: |
+          $src = Join-Path $env:PLAYERBOTS_PATH 'src'
+          $headers = Get-ChildItem $src -Recurse -File -Filter '*AiObjectContext.h'
+          $patched = 0
+          foreach ($header in $headers) {
+            $txt = [System.IO.File]::ReadAllText($header.FullName)
+            if (-not $txt.Contains('static SharedNamedObjectContextList<')) {
+              continue
+            }
+            $include = '#include "PlayerbotsExport.h"'
+            if ($txt.Contains('#include "Common.h"')) {
+              $txt = $txt.Replace(
+                '#include "Common.h"',
+                '#include "Common.h"' + [Environment]::NewLine + $include
+              )
+            } elseif ($txt.Contains('#include "AiObjectContext.h"')) {
+              $txt = $txt.Replace(
+                '#include "AiObjectContext.h"',
+                '#include "AiObjectContext.h"' + [Environment]::NewLine + $include
+              )
+            } else {
+              throw "Header sem include esperado: $($header.FullName)"
+            }
+            $txt = $txt.Replace(
+              'static SharedNamedObjectContextList<',
+              'static PLAYERBOTS_API SharedNamedObjectContextList<'
+            )
+            [System.IO.File]::WriteAllText($header.FullName, $txt)
+            $patched++
+          }
+          if ($patched -ne 11) {
+            throw "Quantidade inesperada de headers: $patched (esperado 11)."
+          }
+          Write-Host "Preparados $patched headers para exportar registradores."
       - name: Encontrar OpenSSL 3 do Windows
         shell: pwsh
         run: |
